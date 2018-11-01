@@ -37,7 +37,6 @@ import java.security.MessageDigest;
 import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.cert.CertPath;
-import java.security.cert.X509Certificate;
 import java.security.interfaces.ECPublicKey;
 import java.util.ArrayList;
 import java.util.List;
@@ -45,14 +44,10 @@ import java.util.logging.Level;
 import java.util.logging.Logger;
 
 import org.eclipse.californium.scandium.auth.PreSharedKeyIdentity;
-import org.eclipse.californium.scandium.auth.RawPublicKeyIdentity;
-import org.eclipse.californium.scandium.auth.X509CertPath;
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig;
 import org.eclipse.californium.scandium.dtls.AlertMessage.AlertDescription;
 import org.eclipse.californium.scandium.dtls.AlertMessage.AlertLevel;
-import org.eclipse.californium.scandium.dtls.CertificateTypeExtension.CertificateType;
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite;
-import org.eclipse.californium.scandium.dtls.cipher.ECDHECryptography;
 import org.eclipse.californium.scandium.dtls.pskstore.PskStore;
 import org.eclipse.californium.scandium.util.ByteArrayUtils;
 import org.eclipse.californium.scandium.util.ServerNames;
@@ -90,28 +85,12 @@ public class ClientHandshaker extends Handshaker {
 
 	protected Integer maxFragmentLengthCode;
 
-	/**
-	 * The certificate types this server supports for client authentication.
-	 * 此服务器支持的证书类型，用于客户端身份验证
-	 */
-	protected List<CertificateType> supportedClientCertificateTypes;
-	/**
-	 * The certificate types this server supports for server authentication.
-	 */
-	protected List<CertificateType> supportedServerCertificateTypes;
-
 	/*
 	 * Store all the message which can possibly be sent by the server. We need
 	 * these to compute the handshake hash.
 	 */
 	/** The server's {@link ServerHello}. Mandatory. */
 	protected ServerHello serverHello;
-	/** The server's {@link CertificateMessage}. Optional. */
-	protected CertificateMessage serverCertificate = null;
-	protected CertificateMessage clientCertificate = null;
-	/** The server's {@link CertificateRequest}. Optional. */
-	protected CertificateRequest certificateRequest = null;
-	protected CertificateVerify certificateVerify = null;
 	/** The server's {@link ServerKeyExchange}. Optional. */
 	protected ServerKeyExchange serverKeyExchange = null;
 	/** The server's {@link ServerHelloDone}. Mandatory. */
@@ -148,8 +127,7 @@ public class ClientHandshaker extends Handshaker {
 	 */
 	public ClientHandshaker(DTLSSession session, RecordLayer recordLayer, SessionListener sessionListener,
 			DtlsConnectorConfig config, int maxTransmissionUnit) {
-		super(true, session, recordLayer, sessionListener, config.getTrustStore(), maxTransmissionUnit, 
-		        config.getRpkTrustStore());
+		super(true, session, recordLayer, sessionListener, config.getTrustStore(), maxTransmissionUnit);
 		this.privateKey = config.getPrivateKey();
 		this.certificateChain = config.getCertificateChain();
 		this.publicKey = config.getPublicKey();
@@ -157,29 +135,6 @@ public class ClientHandshaker extends Handshaker {
 		this.serverNameResolver = config.getServerNameResolver();
 		this.preferredCipherSuites = config.getSupportedCipherSuites();
 		this.maxFragmentLengthCode = config.getMaxFragmentLengthCode();
-		this.supportedServerCertificateTypes = new ArrayList<>();
-		this.supportedServerCertificateTypes.add(CertificateType.RAW_PUBLIC_KEY);
-		if (rootCertificates != null && rootCertificates.length > 0) {
-			int index = config.isSendRawKey() ? 1 : 0;
-			this.supportedServerCertificateTypes.add(index, CertificateType.X_509);
-		}
-
-		this.supportedClientCertificateTypes = new ArrayList<>();
-		// 如果私钥和公钥都不为空的话，那么需要对客户端支持的证书进行设置
-		// 1. certificateChain为空，那么只会发送原始公钥
-		// 2. certificateChain不为空，那么如果设置需要发送原始公钥的话，那么优先设置原始公钥，后设置X_509证书
-		// 3..certificateChain不为空，那么如果设置不需要发送原始公钥的话，那么优先设置X_509证书，后设置原始公钥
-		if (privateKey != null && publicKey != null) {
-			if (certificateChain == null || certificateChain.length == 0) {
-				this.supportedClientCertificateTypes.add(CertificateType.RAW_PUBLIC_KEY);
-			} else if (config.isSendRawKey()) {
-				this.supportedClientCertificateTypes.add(CertificateType.RAW_PUBLIC_KEY);
-				this.supportedClientCertificateTypes.add(CertificateType.X_509);
-			} else {
-				this.supportedClientCertificateTypes.add(CertificateType.X_509);
-				this.supportedClientCertificateTypes.add(CertificateType.RAW_PUBLIC_KEY);
-			}
-		}
 	}
 
 	// Methods ////////////////////////////////////////////////////////
@@ -231,36 +186,6 @@ public class ClientHandshaker extends Handshaker {
 				receivedServerHello((ServerHello) handshakeMsg);
 				break;
 
-			case CERTIFICATE:
-				receivedServerCertificate((CertificateMessage) handshakeMsg);
-				break;
-
-			case SERVER_KEY_EXCHANGE:
-
-				switch (getKeyExchangeAlgorithm()) {
-				case EC_DIFFIE_HELLMAN:
-					receivedServerKeyExchange((ECDHServerKeyExchange) handshakeMsg);
-					break;
-
-				case PSK:
-					serverKeyExchange = (PSKServerKeyExchange) handshakeMsg;
-					break;
-					
-				case NULL:
-					LOGGER.info("Received unexpected ServerKeyExchange message in NULL key exchange mode.");
-					break;
-
-				default:
-					throw new HandshakeException(
-							String.format("Unsupported key exchange algorithm %s", getKeyExchangeAlgorithm().name()),
-							new AlertMessage(AlertLevel.FATAL, AlertDescription.HANDSHAKE_FAILURE, handshakeMsg.getPeer()));
-				}
-				break;
-
-			case CERTIFICATE_REQUEST:
-				// save for later, will be handled by server hello done
-				certificateRequest = (CertificateRequest) handshakeMsg;
-				break;
 
 			case SERVER_HELLO_DONE:
 				receivedServerHelloDone((ServerHelloDone) handshakeMsg);
@@ -277,6 +202,7 @@ public class ClientHandshaker extends Handshaker {
 						new AlertMessage(AlertLevel.FATAL, AlertDescription.UNEXPECTED_MESSAGE, handshakeMsg.getPeer()));
 			}
 
+			// 写一个序列号加1，这样就会
 			incrementNextReceiveSeq();
 			LOGGER.log(Level.FINE, "Processed {1} message with sequence no [{2}] from peer [{0}]",
 					new Object[]{handshakeMsg.getPeer(), handshakeMsg.getMessageType(), handshakeMsg.getMessageSeq()});
@@ -308,9 +234,7 @@ public class ClientHandshaker extends Handshaker {
 
 	/**
 	 * Used by the server to kickstart negotiations.
-	 * 
-	 * @param message
-	 *            the hello request message
+	 *
 	 * @throws HandshakeException if the CLIENT_HELLO record cannot be created
 	 */
 	private void receivedHelloRequest() throws HandshakeException {
@@ -380,76 +304,6 @@ public class ClientHandshaker extends Handshaker {
 								message.getPeer()));
 			}
 		}
-		session.setSendRawPublicKey(CertificateType.RAW_PUBLIC_KEY.equals(serverHello.getClientCertificateType()));
-		session.setReceiveRawPublicKey(CertificateType.RAW_PUBLIC_KEY.equals(serverHello.getServerCertificateType()));
-	}
-
-	/**
-	 * Unless a anonymous cipher suite is used, the server always sends a
-	 * {@link CertificateMessage}. The client verifies it and stores the
-	 * server's public key.
-	 * 
-	 * @param message
-	 *            the server's {@link CertificateMessage}.
-	 * @throws HandshakeException
-	 *             if the certificate could not be verified.
-	 */
-	private void receivedServerCertificate(CertificateMessage message) throws HandshakeException {
-		if (serverCertificate != null && (serverCertificate.getMessageSeq() == message.getMessageSeq())) {
-			// discard duplicate message
-			return;
-		}
-
-		serverCertificate = message;
-		verifyCertificate(serverCertificate);
-		serverPublicKey = serverCertificate.getPublicKey();
-		peerCertPath = message.getCertificateChain();
-	}
-
-	/**
-	 * The ServerKeyExchange message is sent by the server only when the server
-	 * {@link CertificateMessage} (if sent) does not contain enough data to
-	 * allow the client to exchange a premaster secret. Used when the key
-	 * exchange is ECDH. The client tries to verify the server's signature and
-	 * on success prepares the ECDH key agreement.
-	 * 
-	 * @param message
-	 *            the server's {@link ServerKeyExchange} message.
-	 * @throws HandshakeException if the message can't be verified
-	 */
-
-	/**
-	 * 仅当服务器{@link CertificateMessage}（如果已发送）不包含足以允许客户端交换预主密钥的数据时，
-	 * 服务器才会发送ServerKeyExchange消息。密钥交换是ECDH时使用。客户端尝试验证服务器的签名，并在
-	 * 成功时准备ECDH密钥协议。
-	 * @param message
-	 * @throws HandshakeException
-	 */
-	private void receivedServerKeyExchange(ECDHServerKeyExchange message) throws HandshakeException {
-		if (serverKeyExchange != null && (serverKeyExchange.getMessageSeq() == message.getMessageSeq())) {
-			// discard duplicate message
-			return;
-		}
-
-		serverKeyExchange = message;
-		// 当收到服务器{@link ServerKeyExchange}消息以后，会被客户端调用。验证消息里面包含的签名
-		message.verifySignature(serverPublicKey, clientRandom, serverRandom);
-		// server identity has been proven
-		if (peerCertPath != null) {
-			session.setPeerIdentity(new X509CertPath(peerCertPath));
-		} else {
-			session.setPeerIdentity(new RawPublicKeyIdentity(serverPublicKey));
-		}
-		ephemeralServerPublicKey = message.getPublicKey();
-		try {
-			ecdhe = new ECDHECryptography(ephemeralServerPublicKey.getParams());
-		} catch (GeneralSecurityException e) {
-			throw new HandshakeException(
-				String.format(
-					"Cannot create ephemeral keys from domain params provided by server: %s",
-					e.getMessage()),
-				new AlertMessage(AlertLevel.FATAL, AlertDescription.HANDSHAKE_FAILURE, getPeerAddress()));
-		}
 	}
 
 	/**
@@ -470,7 +324,6 @@ public class ClientHandshaker extends Handshaker {
 		serverHelloDone = message;
 		DTLSFlight flight = new DTLSFlight(getSession());
 
-		createCertificateMessage(flight);
 
 		/*
 		 * Second, send ClientKeyExchange as specified by the key exchange
@@ -517,24 +370,6 @@ public class ClientHandshaker extends Handshaker {
 		}
 		flight.addMessage(wrapMessage(clientKeyExchange));
 
-		/*
-		 * Third, send CertificateVerify message if necessary.
-		 */
-		if (certificateRequest != null && negotiatedSignatureAndHashAlgorithm != null) {
-			// prepare handshake messages
-			handshakeMessages = ByteArrayUtils.concatenate(handshakeMessages, clientHello.toByteArray());
-			handshakeMessages = ByteArrayUtils.concatenate(handshakeMessages, serverHello.toByteArray());
-			handshakeMessages = ByteArrayUtils.concatenate(handshakeMessages, serverCertificate.toByteArray());
-			handshakeMessages = ByteArrayUtils.concatenate(handshakeMessages, serverKeyExchange.toByteArray());
-			handshakeMessages = ByteArrayUtils.concatenate(handshakeMessages, certificateRequest.toByteArray());
-			handshakeMessages = ByteArrayUtils.concatenate(handshakeMessages, serverHelloDone.toByteArray());
-			handshakeMessages = ByteArrayUtils.concatenate(handshakeMessages, clientCertificate.toByteArray());
-			handshakeMessages = ByteArrayUtils.concatenate(handshakeMessages, clientKeyExchange.toByteArray());
-
-			certificateVerify = new CertificateVerify(negotiatedSignatureAndHashAlgorithm, privateKey, handshakeMessages, session.getPeer());
-
-			flight.addMessage(wrapMessage(certificateVerify));
-		}
 
 		/*
 		 * Fourth, send ChangeCipherSpec
@@ -552,25 +387,15 @@ public class ClientHandshaker extends Handshaker {
 		// messages
 		md.update(clientHello.toByteArray());
 		md.update(serverHello.toByteArray());
-		if (serverCertificate != null) {
-			md.update(serverCertificate.toByteArray());
-		}
+
 		if (serverKeyExchange != null) {
 			md.update(serverKeyExchange.toByteArray());
 		}
-		if (certificateRequest != null) {
-			md.update(certificateRequest.toByteArray());
-		}
+
 		md.update(serverHelloDone.toByteArray());
 
-		if (clientCertificate != null) {
-			md.update(clientCertificate.toByteArray());
-		}
 		md.update(clientKeyExchange.toByteArray());
 
-		if (certificateVerify != null) {
-			md.update(certificateVerify.toByteArray());
-		}
 
 		MessageDigest mdWithClientFinished = null;
 		try {
@@ -594,85 +419,12 @@ public class ClientHandshaker extends Handshaker {
 		recordLayer.sendFlight(flight);
 	}
 
-	private void createCertificateMessage(final DTLSFlight flight) throws HandshakeException {
-
-		/*
-		 * First, if required by server, send Certificate.
-		 */
-		if (certificateRequest != null) {
-
-			if (session.sendRawPublicKey()) {
-				byte[] rawPublicKeyBytes = new byte[0];
-				PublicKey key = determineClientRawPublicKey(certificateRequest);
-				if (key != null) {
-					rawPublicKeyBytes = key.getEncoded();
-				}
-				LOGGER.log(Level.FINE, "sending CERTIFICATE message with client RawPublicKey [{0}] to server", ByteArrayUtils.toHexString(rawPublicKeyBytes));
-				clientCertificate = new CertificateMessage(rawPublicKeyBytes, session.getPeer());
-			} else {
-				X509Certificate[] clientChain = determineClientCertificateChain(certificateRequest);
-				// make sure we only send certs not part of the server's trust anchor
-				X509Certificate[] truncatedChain = certificateRequest.removeTrustedCertificates(clientChain);
-				LOGGER.log(Level.FINE, "sending CERTIFICATE message with client certificate chain [length: {0}] to server", truncatedChain.length);
-				clientCertificate = new CertificateMessage(truncatedChain, session.getPeer());
-			}
-			flight.addMessage(wrapMessage(clientCertificate));
-		}
-	}
-
-	/**
-	 * Determines the public key to send to the server based on the constraints conveyed in the server's
-	 * <em>CERTIFICATE_REQUEST</em>.
-	 * 
-	 * @param certRequest The certificate request containing the constraints to match.
-	 * @return An appropriate key or {@code null} if this handshaker has not been configured with an appropriate key.
-	 * @throws HandshakeException if this handshaker has not been configured with any public key.
-	 */
-	PublicKey determineClientRawPublicKey(CertificateRequest certRequest) throws HandshakeException {
-
-		if (publicKey == null) {
-			throw new HandshakeException("no public key configured",
-					new AlertMessage(AlertLevel.FATAL, AlertDescription.INTERNAL_ERROR, getPeerAddress()));
-		} else {
-			negotiatedSignatureAndHashAlgorithm = certRequest.getSignatureAndHashAlgorithm(publicKey);
-			if (negotiatedSignatureAndHashAlgorithm == null) {
-				return null;
-			} else {
-				return publicKey;
-			}
-		}
-	}
-
-	/**
-	 * Determines the certificate chain to send to the server based on the constraints conveyed in the server's
-	 * <em>CERTIFICATE_REQUEST</em>.
-	 * 
-	 * @param certRequest The certificate request containing the constraints to match.
-	 * @return The certificate chain to send to the server. The chain will have length 0 if this handshaker has not been
-	 * configured with an appropriate certificate chain.
-	 * @throws HandshakeException if this handshaker has not been configured with any certificate chain.
-	 */
-	X509Certificate[] determineClientCertificateChain(CertificateRequest certRequest) throws HandshakeException {
-
-		if (certificateChain == null) {
-			throw new HandshakeException("no client certificate configured",
-					new AlertMessage(AlertLevel.FATAL, AlertDescription.INTERNAL_ERROR, getPeerAddress()));
-		} else {
-			negotiatedSignatureAndHashAlgorithm = certRequest.getSignatureAndHashAlgorithm(certificateChain);
-			if (negotiatedSignatureAndHashAlgorithm == null) {
-				return new X509Certificate[0];
-			} else {
-				return certificateChain;
-			}
-		}
-	}
 
 	@Override
 	public void startHandshake() throws HandshakeException {
 		handshakeStarted();
 		// 新建一个ClientHello消息，这是第一次创建ClientHello消息，所以没有Cookie
-		ClientHello startMessage = new ClientHello(maxProtocolVersion, new SecureRandom(),
-				supportedClientCertificateTypes, supportedServerCertificateTypes, session.getPeer());
+		ClientHello startMessage = new ClientHello(maxProtocolVersion, new SecureRandom(),session.getPeer());
 
 		// 存储客户端随机数（clientRandom），用于后期计算
 		clientRandom = startMessage.getRandom();

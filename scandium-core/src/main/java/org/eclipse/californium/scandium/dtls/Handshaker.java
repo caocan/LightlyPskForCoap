@@ -62,13 +62,11 @@ import javax.crypto.SecretKey;
 import javax.crypto.spec.IvParameterSpec;
 import javax.crypto.spec.SecretKeySpec;
 
-import org.eclipse.californium.scandium.auth.RawPublicKeyIdentity;
 import org.eclipse.californium.scandium.dtls.AlertMessage.AlertDescription;
 import org.eclipse.californium.scandium.dtls.AlertMessage.AlertLevel;
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite.KeyExchangeAlgorithm;
 import org.eclipse.californium.scandium.dtls.cipher.PseudoRandomFunction;
 import org.eclipse.californium.scandium.dtls.cipher.PseudoRandomFunction.Label;
-import org.eclipse.californium.scandium.dtls.rpkstore.TrustedRpkStore;
 import org.eclipse.californium.scandium.dtls.cipher.ECDHECryptography;
 import org.eclipse.californium.scandium.util.ByteArrayUtils;
 
@@ -114,8 +112,6 @@ public abstract class Handshaker {
 	/** list of trusted self-signed root certificates */
 	protected final X509Certificate[] rootCertificates;
 
-	/** The trusted raw public keys */
-	protected final TrustedRpkStore rpkStore;
 
 	/**
 	 * The current sequence number (in the handshake message called message_seq)
@@ -171,16 +167,14 @@ public abstract class Handshaker {
 	 * @param rootCertificates the trusted root certificates.
 	 * @param maxTransmissionUnit the MTU value reported by the network
 	 *            interface the record layer is bound to.
-	 * @param rpkStore the store containing the trusted raw public keys.
 	 * @throws IllegalStateException if the message digest required for
 	 *             computing the FINISHED message hash cannot be instantiated.
 	 * @throws NullPointerException if session or recordLayer is
 	 *             <code>null</code>.
 	 */
 	protected Handshaker(boolean isClient, DTLSSession session, RecordLayer recordLayer,
-			SessionListener sessionListener, X509Certificate[] rootCertificates, int maxTransmissionUnit,
-			TrustedRpkStore rpkStore) {
-		this(isClient, 0, session, recordLayer, sessionListener, rootCertificates, maxTransmissionUnit, rpkStore);
+			SessionListener sessionListener, X509Certificate[] rootCertificates, int maxTransmissionUnit) {
+		this(isClient, 0, session, recordLayer, sessionListener, rootCertificates, maxTransmissionUnit);
 	}
 
 	/**
@@ -203,7 +197,6 @@ public abstract class Handshaker {
 	 * @param rootCertificates the trusted root certificates.
 	 * @param maxTransmissionUnit the MTU value reported by the network
 	 *            interface the record layer is bound to.
-	 * @param rpkStore the store containing the trusted raw public keys.
 	 * @throws IllegalStateException if the message digest required for
 	 *             computing the FINISHED message hash cannot be instantiated.
 	 * @throws NullPointerException if session or recordLayer is
@@ -212,8 +205,7 @@ public abstract class Handshaker {
 	 *             is negative
 	 */
 	protected Handshaker(boolean isClient, int initialMessageSeq, DTLSSession session, RecordLayer recordLayer,
-			SessionListener sessionListener, X509Certificate[] rootCertificates, int maxTransmissionUnit,
-			TrustedRpkStore rpkStore) {
+			SessionListener sessionListener, X509Certificate[] rootCertificates, int maxTransmissionUnit) {
 		if (session == null) {
 			throw new NullPointerException("DTLS Session must not be null");
 		} else if (recordLayer == null) {
@@ -239,7 +231,6 @@ public abstract class Handshaker {
 			throw new IllegalStateException(String.format("Message digest algorithm %s is not available on JVM",
 					MESSAGE_DIGEST_ALGORITHM_NAME));
 		}
-		this.rpkStore = rpkStore;
 	}
 
 	/**
@@ -981,57 +972,5 @@ public abstract class Handshaker {
 		}
 		return result;
 	}
-	
-	/**
-	 * Validates the X.509 certificate chain provided by the the peer as part of
-	 * this message, or the raw public key.
-	 * 
-	 * This method checks
-	 * <ol>
-	 * <li>that each certificate's issuer DN equals the subject DN of the next
-	 * certiciate in the chain</li>
-	 * <li>that each certificate is currently valid according to its validity
-	 * period</li>
-	 * <li>that the chain is rooted at a trusted CA</li>
-	 * </ol>
-	 * 
-	 * OR that the raw public key is in the raw public key trust store.
-	 * 
-	 * @param message the certificate message
-	 * 
-	 * @throws HandshakeException if any of the checks fails
-	 */
-	public void verifyCertificate(CertificateMessage message) throws HandshakeException {
-		if (message.getCertificateChain() != null) {
 
-			Set<TrustAnchor> trustAnchors = getTrustAnchors(rootCertificates);
-
-			try {
-				PKIXParameters params = new PKIXParameters(trustAnchors);
-				// TODO: implement alternative means of revocation checking
-				params.setRevocationEnabled(false);
-
-				CertPathValidator validator = CertPathValidator.getInstance("PKIX");
-				validator.validate(message.getCertificateChain(), params);
-
-			} catch (GeneralSecurityException e) {
-				if (LOGGER.isLoggable(Level.FINEST)) {
-					LOGGER.log(Level.FINEST, "Certificate validation failed", e);
-				} else if (LOGGER.isLoggable(Level.FINE)) {
-					LOGGER.log(Level.FINE, "Certificate validation failed due to {0}", e.getMessage());
-				}
-				AlertMessage alert = new AlertMessage(AlertLevel.FATAL, AlertDescription.BAD_CERTIFICATE,
-						session.getPeer());
-				throw new HandshakeException("Certificate chain could not be validated", alert);
-			}
-		} else {
-			RawPublicKeyIdentity rpk = new RawPublicKeyIdentity(message.getPublicKey());
-			if (!rpkStore.isTrusted(rpk)) {
-				LOGGER.fine("Certificate validation failed: Raw public key is not trusted");
-				AlertMessage alert = new AlertMessage(AlertLevel.FATAL, AlertDescription.BAD_CERTIFICATE,
-						session.getPeer());
-				throw new HandshakeException("Raw public key is not trusted", alert);
-			}
-		}
-	}
 }

@@ -35,8 +35,6 @@ import java.util.List;
 import org.eclipse.californium.scandium.dtls.ServerNameResolver;
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite;
 import org.eclipse.californium.scandium.dtls.pskstore.PskStore;
-import org.eclipse.californium.scandium.dtls.rpkstore.TrustAllRpks;
-import org.eclipse.californium.scandium.dtls.rpkstore.TrustedRpkStore;
 
 /**
  * 用于DTLSConnector的所有配置选项的容器，此类的实例是不可变的，只能通过{@link Builder}创建
@@ -101,9 +99,7 @@ public final class DtlsConnectorConfig {
 
 	/** 按照优先顺序排列的被支持的密钥套件 */
 	private CipherSuite[] supportedCipherSuites;
-	
-	/** 默认是信任所有的RPK **/
-	private TrustedRpkStore trustedRPKs = new TrustAllRpks();
+
 
 	private int outboundMessageBufferSize = 100000;
 
@@ -328,14 +324,7 @@ public final class DtlsConnectorConfig {
 	public long getStaleConnectionThreshold() {
 		return staleConnectionThreshold;
 	}
-	
-	/**
-	 * @return The trust store for raw public keys verified out-of-band for
-	 *         DTLS-RPK handshakes
-	 */
-	public TrustedRpkStore getRpkTrustStore() {
-		return trustedRPKs;
-	}
+
 
 	/**
 	 * A helper for creating instances of <code>DtlsConnectorConfig</code>
@@ -925,18 +914,6 @@ public final class DtlsConnectorConfig {
 			// 设置被支持的密钥套件列表，按照优先顺序排列
 			config.supportedCipherSuites = ciphers.toArray(new CipherSuite[0]);
 		}
-	
 
-		/**
-		 * Sets the store for trusted raw public keys.
-		 * 
-		 * @param store the trust store
-		 */
-		public void setRpkTrustStore(TrustedRpkStore store) {
-			if (store == null) {
-				throw new IllegalStateException("Must provide a non-null trust store");
-			}
-			config.trustedRPKs = store;
-		}
 	}
 }

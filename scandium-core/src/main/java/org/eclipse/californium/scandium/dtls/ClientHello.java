@@ -28,7 +28,6 @@ import java.util.List;
 
 import org.eclipse.californium.elements.util.DatagramReader;
 import org.eclipse.californium.elements.util.DatagramWriter;
-import org.eclipse.californium.scandium.dtls.CertificateTypeExtension.CertificateType;
 import org.eclipse.californium.scandium.dtls.HelloExtension.ExtensionType;
 import org.eclipse.californium.scandium.dtls.SupportedPointFormatsExtension.ECPointFormat;
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite;
@@ -102,18 +101,13 @@ public final class ClientHello extends HandshakeMessage {
 	 *            协议版本
 	 * @param secureRandom
 	 *            用于创建在消息中包含的随机值的函数
-	 * @param supportedClientCertificateTypes
-	 *            客户端支持的证书类型列表
-	 * @param supportedServerCertificateTypes
 	 *            服务端支持的证书类型列表
 	 * @param peerAddress
 	 *            the IP address and port of the peer this message has been
 	 *            received from or should be sent to
 	 */
-	public ClientHello(ProtocolVersion version, SecureRandom secureRandom,
-			List<CertificateType> supportedClientCertificateTypes,
-			List<CertificateType> supportedServerCertificateTypes, InetSocketAddress peerAddress) {
-		this(version, secureRandom, null, supportedClientCertificateTypes, supportedServerCertificateTypes, peerAddress);
+	public ClientHello(ProtocolVersion version, SecureRandom secureRandom,InetSocketAddress peerAddress) {
+		this(version, secureRandom, null, peerAddress);
 	}
 
 	/**
@@ -126,18 +120,14 @@ public final class ClientHello extends HandshakeMessage {
 	 *            a function to use for creating random values included in the message
 	 * @param session
 	 *            the (already existing) DTLS session to resume
-	 * @param supportedClientCertificateTypes the list of certificate types supported by the client
-	 * @param supportedServerCertificateTypes the list of certificate types supported by the server
 	 */
-	public ClientHello(ProtocolVersion version, SecureRandom secureRandom, DTLSSession session, List<CertificateType> supportedClientCertificateTypes,
-			List<CertificateType> supportedServerCertificateTypes) {
-		this(version, secureRandom, session.getSessionIdentifier(), supportedClientCertificateTypes, supportedServerCertificateTypes, session.getPeer());
+	public ClientHello(ProtocolVersion version, SecureRandom secureRandom, DTLSSession session) {
+		this(version, secureRandom, session.getSessionIdentifier(), session.getPeer());
 		addCipherSuite(session.getWriteState().getCipherSuite());
 		addCompressionMethod(session.getWriteState().getCompressionMethod());
 	}
 
-	private ClientHello(ProtocolVersion version, SecureRandom secureRandom, SessionId sessionId, List<CertificateType> supportedClientCertificateTypes,
-			List<CertificateType> supportedServerCertificateTypes, InetSocketAddress peerAddress) {
+	private ClientHello(ProtocolVersion version, SecureRandom secureRandom, SessionId sessionId, InetSocketAddress peerAddress) {
 		this(peerAddress);
 		this.clientVersion = version;
 		this.random = new Random(secureRandom);
@@ -157,24 +147,6 @@ public final class ClientHello extends HandshakeMessage {
 		List<ECPointFormat> formats = Arrays.asList(ECPointFormat.UNCOMPRESSED);
 		this.extensions.addExtension(new SupportedPointFormatsExtension(formats));
 
-		// the certificate types the client is able to provide to the server
-		if (supportedClientCertificateTypes != null && !supportedClientCertificateTypes.isEmpty()) {
-			CertificateTypeExtension clientCertificateType = new ClientCertificateTypeExtension(true);
-			for (CertificateType certificateType : supportedClientCertificateTypes) {
-				clientCertificateType.addCertificateType(certificateType);
-			}
-			this.extensions.addExtension(clientCertificateType);
-		}
-
-		// the type of certificates the client is able to process when provided
-		// by the server
-		if (supportedServerCertificateTypes != null && !supportedServerCertificateTypes.isEmpty()) {
-			CertificateTypeExtension serverCertificateType = new ServerCertificateTypeExtension(true);
-			for (CertificateType certificateType : supportedServerCertificateTypes) {
-				serverCertificateType.addCertificateType(certificateType);
-			}
-			this.extensions.addExtension(serverCertificateType);
-		}
 	}
 
 	private ClientHello(InetSocketAddress peerAddress) {
@@ -387,32 +359,6 @@ public final class ClientHello extends HandshakeMessage {
 	public SupportedEllipticCurvesExtension getSupportedEllipticCurvesExtension() {
 		if (extensions != null) {
 			return (SupportedEllipticCurvesExtension) extensions.getExtension(ExtensionType.ELLIPTIC_CURVES);
-		} else {
-			return null;
-		}
-	}
-
-	/**
-	 * 
-	 * @return the client's certificate type extension if available, otherwise
-	 *         <code>null</code>.
-	 */
-	public ClientCertificateTypeExtension getClientCertificateTypeExtension() {
-		if (extensions != null) {
-			return (ClientCertificateTypeExtension) extensions.getExtension(ExtensionType.CLIENT_CERT_TYPE);
-		} else {
-			return null;
-		}
-	}
-
-	/**
-	 * 
-	 * @return the client's certificate type extension if available, otherwise
-	 *         <code>null</code>.
-	 */
-	public ServerCertificateTypeExtension getServerCertificateTypeExtension() {
-		if (extensions != null) {
-			return (ServerCertificateTypeExtension) extensions.getExtension(ExtensionType.SERVER_CERT_TYPE);
 		} else {
 			return null;
 		}

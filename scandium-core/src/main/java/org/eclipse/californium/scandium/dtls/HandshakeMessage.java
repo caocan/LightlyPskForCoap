@@ -216,25 +216,16 @@ public abstract class HandshakeMessage extends AbstractMessage {
 			body = HelloVerifyRequest.fromByteArray(bytesLeft, peerAddress);
 			break;
 
-		case CERTIFICATE:
-			body = CertificateMessage.fromByteArray(bytesLeft, useRawPublicKey, peerAddress);
-			break;
 
 		case SERVER_KEY_EXCHANGE:
 			body = readServerKeyExchange(bytesLeft, keyExchange, peerAddress);
 			break;
 
-		case CERTIFICATE_REQUEST:
-			body = CertificateRequest.fromByteArray(bytesLeft, peerAddress);
-			break;
 
 		case SERVER_HELLO_DONE:
 			body = new ServerHelloDone(peerAddress);
 			break;
 
-		case CERTIFICATE_VERIFY:
-			body = CertificateVerify.fromByteArray(bytesLeft, peerAddress);
-			break;
 
 		case CLIENT_KEY_EXCHANGE:
 			body = readClientKeyExchange(bytesLeft, keyExchange, peerAddress);

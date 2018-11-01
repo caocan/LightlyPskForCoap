@@ -25,7 +25,6 @@ import org.eclipse.californium.elements.util.DatagramReader;
 import org.eclipse.californium.elements.util.DatagramWriter;
 import org.eclipse.californium.scandium.dtls.AlertMessage.AlertDescription;
 import org.eclipse.californium.scandium.dtls.AlertMessage.AlertLevel;
-import org.eclipse.californium.scandium.dtls.CertificateTypeExtension.CertificateType;
 import org.eclipse.californium.scandium.dtls.HelloExtension.ExtensionType;
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite;
 import org.eclipse.californium.scandium.util.ByteArrayUtils;
@@ -292,43 +291,6 @@ public final class ServerHello extends HandshakeMessage {
 		return extensions;
 	}
 
-	/**
-	 * Gets the type of certificate the server expects the client to send in
-	 * its <em>Certificate</em> message.
-	 * 
-	 * @return the type
-	 */
-	CertificateType getClientCertificateType() {
-		// default type is always X.509
-		CertificateType result = CertificateType.X_509;
-		if (extensions != null) {
-			ClientCertificateTypeExtension ext = (ClientCertificateTypeExtension)
-					extensions.getExtension(ExtensionType.CLIENT_CERT_TYPE);
-			if (ext != null && !ext.getCertificateTypes().isEmpty()) {
-				result = ext.getCertificateTypes().get(0);
-			}
-		}
-		return result;
-	}
-	
-	/**
-	 * Gets the type of certificate the server will send to the client in
-	 * its <em>Certificate</em> message.
-	 * 
-	 * @return the type
-	 */
-	CertificateType getServerCertificateType() {
-		// default type is always X.509
-		CertificateType result = CertificateType.X_509;
-		if (extensions != null) {
-			ServerCertificateTypeExtension ext = (ServerCertificateTypeExtension)
-					extensions.getExtension(ExtensionType.SERVER_CERT_TYPE);
-			if (ext != null && !ext.getCertificateTypes().isEmpty()) {
-				result = ext.getCertificateTypes().get(0);
-			}
-		}
-		return result;
-	}
 
 	/**
 	 * Gets the <em>MaxFragmentLength</em> extension data from this message.

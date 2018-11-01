@@ -142,10 +142,6 @@ public abstract class HelloExtension {
 				return SupportedEllipticCurvesExtension.fromExtensionData(extensionData);
 			case EC_POINT_FORMATS:
 				return SupportedPointFormatsExtension.fromExtensionData(extensionData);
-			case CLIENT_CERT_TYPE:
-				return ClientCertificateTypeExtension.fromExtensionData(extensionData);
-			case SERVER_CERT_TYPE:
-				return ServerCertificateTypeExtension.fromExtensionData(extensionData);
 			case MAX_FRAGMENT_LENGTH:
 				return MaxFragmentLengthExtension.fromExtensionData(extensionData, peerAddress);
 			case SERVER_NAME:

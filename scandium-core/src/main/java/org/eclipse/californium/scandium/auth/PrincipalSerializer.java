@@ -55,11 +55,7 @@ public final class PrincipalSerializer {
 			writer.writeByte(ClientAuthenticationType.ANONYMOUS.code);
 		} else if (principal instanceof PreSharedKeyIdentity) {
 			serializeIdentity((PreSharedKeyIdentity) principal, writer);
-		} else if (principal instanceof RawPublicKeyIdentity) {
-			serializeSubjectInfo((RawPublicKeyIdentity) principal, writer);
-		} else if (principal instanceof X509CertPath) {
-			serializeCertChain((X509CertPath) principal, writer);
-		} else {
+		}else {
 			throw new IllegalArgumentException("unsupported principal type: " + principal.getClass().getName());
 		}
 	}
@@ -69,15 +65,6 @@ public final class PrincipalSerializer {
 		writeBytes(principal.getName().getBytes(StandardCharsets.UTF_8), writer);
 	}
 
-	private static void serializeSubjectInfo(final RawPublicKeyIdentity principal, final DatagramWriter writer) {
-		writer.writeByte(ClientAuthenticationType.RPK.code);
-		writeBytes(principal.getSubjectInfo(), writer);
-	}
-
-	private static void serializeCertChain(final X509CertPath principal, final DatagramWriter writer) {
-		writer.writeByte(ClientAuthenticationType.CERT.code);
-		writeBytes(principal.toByteArray(), writer);
-	}
 
 	private static void writeBytes(final byte[] bytesToWrite, final DatagramWriter writer) {
 		writer.write(bytesToWrite.length, 16);
@@ -99,30 +86,19 @@ public final class PrincipalSerializer {
 		int code = reader.read(8);
 		ClientAuthenticationType type = ClientAuthenticationType.fromCode((byte) code);
 		switch(type) {
-		case CERT:
-			return deserializeCertChain(reader);
 		case PSK:
 			return deserializeIdentity(reader);
-		case RPK:
-			return deserializeSubjectInfo(reader);
 		default:
 			// ANONYMOUS
 			return null;
 		}
 	}
 
-	private static X509CertPath deserializeCertChain(final DatagramReader reader) {
-		return X509CertPath.fromBytes(readBytes(reader, 24));
-	};
 
 	private static PreSharedKeyIdentity deserializeIdentity(final DatagramReader reader) {
 		return new PreSharedKeyIdentity(new String(readBytes(reader, 16)));
 	};
 
-	private static RawPublicKeyIdentity deserializeSubjectInfo(final DatagramReader reader) throws GeneralSecurityException {
-		byte[] subjectInfo = readBytes(reader, 16);
-		return new RawPublicKeyIdentity(subjectInfo);
-	}
 
 	private static byte[] readBytes(final DatagramReader reader, final int lengthBits) {
 		int length = reader.read(lengthBits);
