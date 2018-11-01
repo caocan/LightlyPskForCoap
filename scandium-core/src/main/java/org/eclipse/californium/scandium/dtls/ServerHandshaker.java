@@ -300,6 +300,7 @@ public class ServerHandshaker extends Handshaker {
 
 		// Verify client's data
 		byte[] handshakeHash = md.digest();
+		// 对于ClientFinish之前所有的消息进行哈希，然后进行完整性验证
 		message.verifyData(getMasterSecret(), true, handshakeHash);
 
 		/*
@@ -310,7 +311,7 @@ public class ServerHandshaker extends Handshaker {
 		setCurrentWriteState();
 
 		/*
-		 * Second, send Finished message
+		 * Second, send Finished message，将客户度的Finish消息加入哈希
 		 */
 		handshakeHash = mdWithClientFinished.digest();
 		Finished finished = new Finished(getMasterSecret(), isClient, handshakeHash, session.getPeer());

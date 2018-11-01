@@ -8,6 +8,10 @@
     - dtls：560 KB
     - DTLSConnector：76 KB
     
+- 交互报文
+    ![DTLS](DTLS.PNG)
+    消息报文数量：10~15个
+    
 ### 只使用PSK的Scandium项目
 - 代码规模
     - 总体：690 KB
@@ -20,3 +24,6 @@
 
     ![DTLS-PSK](DTLS-PSK.png)
     消息报文数量：10个
+    
+    采用的哈希摘要算法是SHA-256
+    
