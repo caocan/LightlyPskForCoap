@@ -17,8 +17,7 @@
 package org.eclipse.californium.scandium.dtls.pskstore;
 
 import java.net.InetSocketAddress;
-import java.util.Arrays;
-import java.util.Map;
+import java.util.*;
 import java.util.concurrent.ConcurrentHashMap;
 
 import org.eclipse.californium.scandium.dtls.ServerNameResolver;
@@ -175,6 +174,16 @@ public class InMemoryPskStore implements PskStore, ServerNameResolver {
 		} else {
 			return identitiesByAddress.get(inetAddress);
 		}
+	}
+
+	// 遍历密钥库，将所有的identity提出出来返回
+	@Override
+	public Set<String> getAllIdentity() {
+		Set<String> identities = new HashSet<>();
+		for (String identity : keys.keySet()){
+			identities.add(identity);
+		}
+		return identities;
 	}
 
 	@Override

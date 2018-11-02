@@ -2,6 +2,8 @@ package org.eclipse.californium.scandium.dtls.pskstore;
 
 import java.net.InetSocketAddress;
 import java.util.Arrays;
+import java.util.HashSet;
+import java.util.Set;
 
 import org.eclipse.californium.scandium.util.ServerNames;
 
@@ -42,5 +44,13 @@ public class StaticPskStore implements PskStore {
 	@Override
 	public byte[] getKey(final ServerNames serverNames, final String identity) {
 		return key;
+	}
+
+	// 遍历密钥库，将所有的identity提出出来返回
+	@Override
+	public Set<String> getAllIdentity() {
+		Set<String> identities = new HashSet<>();
+		identities.add(fixedIdentity);
+		return identities;
 	}
 }

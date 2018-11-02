@@ -37,7 +37,7 @@ public class SecureClient {
 		ScandiumLogger.setLevel(Level.FINE);
 	}
 
-	private static final String SERVER_URI = "coaps://10.108.246.164:5684/secure";
+	private static final String SERVER_URI = "coaps://localhost/secure";
 
 	private DTLSConnector dtlsConnector;
 

@@ -38,8 +38,6 @@ import java.security.PublicKey;
 import java.security.SecureRandom;
 import java.security.cert.CertPath;
 import java.security.interfaces.ECPublicKey;
-import java.util.ArrayList;
-import java.util.List;
 import java.util.logging.Level;
 import java.util.logging.Logger;
 
@@ -49,7 +47,6 @@ import org.eclipse.californium.scandium.dtls.AlertMessage.AlertDescription;
 import org.eclipse.californium.scandium.dtls.AlertMessage.AlertLevel;
 import org.eclipse.californium.scandium.dtls.cipher.CipherSuite;
 import org.eclipse.californium.scandium.dtls.pskstore.PskStore;
-import org.eclipse.californium.scandium.util.ByteArrayUtils;
 import org.eclipse.californium.scandium.util.ServerNames;
 
 /**
@@ -64,6 +61,12 @@ public class ClientHandshaker extends Handshaker {
 	// Members ////////////////////////////////////////////////////////
 
 	private ProtocolVersion maxProtocolVersion = new ProtocolVersion();
+
+	/**
+	 * The last flight that is sent during this handshake, will not be
+	 * retransmitted unless the peer retransmits its last flight.
+	 */
+	private DTLSFlight lastFlight;
 
 	/** The server's public key from its certificate */
 	// 服务器来自证书的公钥
@@ -146,6 +149,18 @@ public class ClientHandshaker extends Handshaker {
 	@Override
 	protected synchronized void doProcessMessage(DTLSMessage message) throws HandshakeException, GeneralSecurityException {
 
+        if (lastFlight != null) {
+            // we already sent the last flight (including our FINISHED message),
+            // but the client does not seem to have received it because we received
+            // its finished message again, so we simply retransmit our last flight
+            LOGGER.log(Level.FINER, "Received server's ({0}) FINISHED message again, retransmitting last flight...",
+                    getPeerAddress());
+            lastFlight.incrementTries();
+            lastFlight.setNewSequenceNumbers();
+            recordLayer.sendFlight(lastFlight);
+            return;
+        }
+
 		// log record now (even if message is still encrypted) in case an Exception
 		// is thrown during processing
 		if (LOGGER.isLoggable(Level.FINE)) {
@@ -180,16 +195,13 @@ public class ClientHandshaker extends Handshaker {
 
 			case HELLO_VERIFY_REQUEST:
 				receivedHelloVerifyRequest((HelloVerifyRequest) handshakeMsg);
+                // 当发送完第二次的ClientHello之后，希望下一次Flight中服务器
+                // 能发送一个ChangeCipherSpec消息
+                expectChangeCipherSpecMessage();
 				break;
 
 			case SERVER_HELLO:
 				receivedServerHello((ServerHello) handshakeMsg);
-				break;
-
-
-			case SERVER_HELLO_DONE:
-				receivedServerHelloDone((ServerHelloDone) handshakeMsg);
-				expectChangeCipherSpecMessage();
 				break;
 
 			case FINISHED:
@@ -203,7 +215,11 @@ public class ClientHandshaker extends Handshaker {
 			}
 
 			// 写一个序列号加1，这样就会
-			incrementNextReceiveSeq();
+            if (lastFlight == null) {
+                // only increment for ongoing handshake flights, not for the last flight!
+                // not ignore a client FINISHED retransmission caused by lost server FINISHED
+                incrementNextReceiveSeq();
+            }
 			LOGGER.log(Level.FINE, "Processed {1} message with sequence no [{2}] from peer [{0}]",
 					new Object[]{handshakeMsg.getPeer(), handshakeMsg.getMessageType(), handshakeMsg.getMessageSeq()});
 			break;
@@ -218,18 +234,65 @@ public class ClientHandshaker extends Handshaker {
 	/**
 	 * Called when the client received the server's finished message. If the
 	 * data can be verified, encrypted application data can be sent.
-	 * 
+	 *
 	 * @param message
 	 *            the {@link Finished} message.
 	 * @throws HandshakeException
-	 * @throws GeneralSecurityException if the APPLICATION record cannot be created 
+	 * @throws GeneralSecurityException if the APPLICATION record cannot be created
 	 */
 	private void receivedServerFinished(Finished message) throws HandshakeException, GeneralSecurityException {
 
-		message.verifyData(getMasterSecret(), false, handshakeHash);
-		state = HandshakeType.FINISHED.getCode();
-		sessionEstablished();
-		handshakeCompleted();
+        // 查看如果是最后一次航班，那么就返回，不是才发送
+        if (lastFlight != null) {
+            return;
+        }
+
+        DTLSFlight flight = new DTLSFlight(getSession());
+
+        MessageDigest mdWithServerFinished = null;
+
+        try {
+            /**
+             * 将ServerFinished消息也加入到摘要计算中，之后发送给服务器，让服务器进行完整性验证
+             */
+            mdWithServerFinished = (MessageDigest) md.clone();
+        } catch (CloneNotSupportedException e) {
+            throw new HandshakeException(
+                    "Cannot create FINISHED message",
+                    new AlertMessage(
+                            AlertLevel.FATAL, AlertDescription.INTERNAL_ERROR, message.getPeer()));
+        }
+
+        byte[] handshakeHash = md.digest();
+        // 对于ClientFinish之前所有的消息进行哈希，然后进行完整性验证
+        message.verifyData(session.getMasterSecret(), false, handshakeHash);
+
+		mdWithServerFinished.update(message.toByteArray());
+
+        /*
+         * 2. 发送ChangeCipherSpec
+         */
+        ChangeCipherSpecMessage changeCipherSpecMessage = new ChangeCipherSpecMessage(session.getPeer());
+        flight.addMessage(wrapMessage(changeCipherSpecMessage));
+        // 设置当前写状态
+        setCurrentWriteState();
+
+        /*
+         * 3. 发送Finished message，将ServerFinished消息加入哈希
+         */
+        handshakeHash = mdWithServerFinished.digest();
+        Finished finished = new Finished(getMasterSecret(), true, handshakeHash, session.getPeer());
+        flight.addMessage(wrapMessage(finished));
+
+        state = HandshakeType.FINISHED.getCode();
+
+        flight.setRetransmissionNeeded(false);
+        // store, if we need to retransmit this flight, see
+        // http://tools.ietf.org/html/rfc6347#section-4.2.4
+        lastFlight = flight;
+        recordLayer.sendFlight(flight);
+        // 会话建立好了，可以发送应用层消息了
+        sessionEstablished();
 	}
 
 	/**
@@ -258,6 +321,9 @@ public class ClientHandshaker extends Handshaker {
 	protected void receivedHelloVerifyRequest(HelloVerifyRequest message) throws HandshakeException {
 
 		clientHello.setCookie(message.getCookie());
+        // 将客户端的PSK密钥库中所有的identity都添加到ClientHello中的identity列表
+        for (String identity : pskStore.getAllIdentity())
+            clientHello.AddToIdentityList(identity);
 		// update the length (cookie added)
 		clientHello.setFragmentLength(clientHello.getMessageLength());
 
@@ -277,6 +343,10 @@ public class ClientHandshaker extends Handshaker {
 	 * 	e.g. because the server selected an unknown or unsupported cipher suite
 	 */
 	protected void receivedServerHello(ServerHello message) throws HandshakeException {
+
+		// 用于存储预主密钥
+		byte[] premasterSecret;
+
 		if (serverHello != null && (message.getMessageSeq() == serverHello.getMessageSeq())) {
 			// received duplicate version (retransmission), discard it
 			// 收到重复的报文，应该丢弃
@@ -304,121 +374,26 @@ public class ClientHandshaker extends Handshaker {
 								message.getPeer()));
 			}
 		}
+
+		// 获取到服务器协商好的密钥
+		String identity = serverHello.getIdentity();
+
+		// 获取到服务器random，这样两个随机数就齐全了
+		serverRandom = serverHello.getRandom();
+
+		// 查找psk
+		byte[] psk = pskStore.getKey(identity);
+		if (psk == null) {
+			AlertMessage alert = new AlertMessage(AlertLevel.FATAL,	AlertDescription.HANDSHAKE_FAILURE, session.getPeer());
+			throw new HandshakeException("No preshared secret found for identity: " + identity, alert);
+		}
+		session.setPeerIdentity(new PreSharedKeyIdentity(identity));
+
+		LOGGER.log(Level.FINER, "Using PSK identity: {0}", identity);
+		premasterSecret = generatePremasterSecretFromPSK(psk);
+		// 计算出会话密钥
+		generateKeys(premasterSecret);
 	}
-
-	/**
-	 * The ServerHelloDone message is sent by the server to indicate the end of
-	 * the ServerHello and associated messages. The client prepares all
-	 * necessary messages (depending on server's previous flight) and returns
-	 * the next flight.
-	 * 
-	 * @throws HandshakeException
-	 * @throws GeneralSecurityException if the client's handshake records cannot be created
-	 */
-	private void receivedServerHelloDone(ServerHelloDone message) throws HandshakeException, GeneralSecurityException {
-
-		if (serverHelloDone != null && (serverHelloDone.getMessageSeq() == message.getMessageSeq())) {
-			// discard duplicate message
-			return;
-		}
-		serverHelloDone = message;
-		DTLSFlight flight = new DTLSFlight(getSession());
-
-
-		/*
-		 * Second, send ClientKeyExchange as specified by the key exchange
-		 * algorithm.
-		 */
-		ClientKeyExchange clientKeyExchange;
-		byte[] premasterSecret;
-		switch (getKeyExchangeAlgorithm()) {
-		case EC_DIFFIE_HELLMAN:
-			clientKeyExchange = new ECDHClientKeyExchange(ecdhe.getPublicKey(), session.getPeer());
-			premasterSecret = ecdhe.getSecret(ephemeralServerPublicKey).getEncoded();
-			generateKeys(premasterSecret);
-			break;
-		case PSK:
-			String identity = pskStore.getIdentity(getPeerAddress());
-			if (identity == null) {
-				AlertMessage alert = new AlertMessage(AlertLevel.FATAL, AlertDescription.HANDSHAKE_FAILURE, session.getPeer());
-				throw new HandshakeException("No Identity found for peer: "	+ getPeerAddress(), alert);
-			}
-			byte[] psk = pskStore.getKey(identity);
-			if (psk == null) {
-				AlertMessage alert = new AlertMessage(AlertLevel.FATAL,	AlertDescription.HANDSHAKE_FAILURE, session.getPeer());
-				throw new HandshakeException("No preshared secret found for identity: " + identity, alert);
-			}
-			session.setPeerIdentity(new PreSharedKeyIdentity(identity));
-			clientKeyExchange = new PSKClientKeyExchange(identity, session.getPeer());
-			LOGGER.log(Level.FINER, "Using PSK identity: {0}", identity);
-			premasterSecret = generatePremasterSecretFromPSK(psk);
-			generateKeys(premasterSecret);
-
-			break;
-
-		case NULL:
-			clientKeyExchange = new NULLClientKeyExchange(session.getPeer());
-
-			// We assume, that the premaster secret is empty
-			generateKeys(new byte[] {});
-			break;
-
-		default:
-			throw new HandshakeException(
-					"Unknown key exchange algorithm: " + getKeyExchangeAlgorithm(),
-					new AlertMessage(AlertLevel.FATAL, AlertDescription.HANDSHAKE_FAILURE, session.getPeer()));
-		}
-		flight.addMessage(wrapMessage(clientKeyExchange));
-
-
-		/*
-		 * Fourth, send ChangeCipherSpec
-		 */
-		ChangeCipherSpecMessage changeCipherSpecMessage = new ChangeCipherSpecMessage(session.getPeer());
-		flight.addMessage(wrapMessage(changeCipherSpecMessage));
-		// 一组算法和相应的安全参数，它们一起表示TLS连接的当前读取或写入状态。
-		setCurrentWriteState();
-
-		/*
-		 * Fifth, send the finished message.
-		 */
-		// create hash of handshake messages
-		// can't do this on the fly, since there is no explicit ordering of
-		// messages
-		md.update(clientHello.toByteArray());
-		md.update(serverHello.toByteArray());
-
-		if (serverKeyExchange != null) {
-			md.update(serverKeyExchange.toByteArray());
-		}
-
-		md.update(serverHelloDone.toByteArray());
-
-		md.update(clientKeyExchange.toByteArray());
-
-
-		MessageDigest mdWithClientFinished = null;
-		try {
-			mdWithClientFinished = (MessageDigest) md.clone();
-		} catch (CloneNotSupportedException e) {
-			throw new HandshakeException(
-					"Cannot create FINISHED message",
-					new AlertMessage(
-							AlertLevel.FATAL, AlertDescription.INTERNAL_ERROR, message.getPeer()));
-		}
-
-		handshakeHash = md.digest();
-		Finished finished = new Finished(getMasterSecret(), isClient, handshakeHash, session.getPeer());
-		flight.addMessage(wrapMessage(finished));
-
-		// compute handshake hash with client's finished message also
-		// included, used for server's finished message
-		mdWithClientFinished.update(finished.toByteArray());
-		handshakeHash = mdWithClientFinished.digest();
-
-		recordLayer.sendFlight(flight);
-	}
-
 
 	@Override
 	public void startHandshake() throws HandshakeException {

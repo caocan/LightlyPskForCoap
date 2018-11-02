@@ -136,9 +136,6 @@ public abstract class Handshaker {
 	 */
 	protected MessageDigest md;
 
-	/** All the handshake messages exchanged before the CertificateVerify message. */
-	protected byte[] handshakeMessages = new byte[] {};
-
 	/** The handshaker's private key. */
 	protected PrivateKey privateKey;
 

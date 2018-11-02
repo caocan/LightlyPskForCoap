@@ -20,6 +20,7 @@
 package org.eclipse.californium.scandium.dtls;
 
 import java.net.InetSocketAddress;
+import java.nio.charset.Charset;
 
 import org.eclipse.californium.elements.util.DatagramReader;
 import org.eclipse.californium.elements.util.DatagramWriter;
@@ -53,6 +54,8 @@ public final class ServerHello extends HandshakeMessage {
 	private static final int CIPHER_SUITE_BITS = 16;
 
 	private static final int COMPRESSION_METHOD_BITS = 8;
+
+	private static final int IDENTITY_LENGTH = 8;
 
 	// Members ///////////////////////////////////////////////////////////
 
@@ -91,6 +94,16 @@ public final class ServerHello extends HandshakeMessage {
 	 */
 	private final HelloExtensions extensions;
 
+	/**
+	 * 用于发送给客户端查找psk的identity
+	 */
+	private String identity;
+	private byte[] identityEncoded;
+
+	public String getIdentity() {
+		return this.identity;
+	}
+
 	// Constructor ////////////////////////////////////////////////////
 
 	/**
@@ -112,11 +125,12 @@ public final class ServerHello extends HandshakeMessage {
 	 *            a list of extensions supported by the client (may be <code>null</code>).
 	 * @param peerAddress the IP address and port of the peer this
 	 *            message has been received from or should be sent to
+	 * @param identity 服务器从客户端发来的identityList中查找到的本地支持的identity
 	 * @throws NullPointerException if any of the mandatory parameters is <code>null</code>
 	 */
 	public ServerHello(ProtocolVersion version, Random random, SessionId sessionId,
 			CipherSuite cipherSuite, CompressionMethod compressionMethod, HelloExtensions extensions,
-			InetSocketAddress peerAddress) {
+			InetSocketAddress peerAddress, String identity) {
 		super(peerAddress);
 		if (version == null) {
 			throw new NullPointerException("Negotiated protocol version must not be null");
@@ -139,6 +153,8 @@ public final class ServerHello extends HandshakeMessage {
 		this.cipherSuite = cipherSuite;
 		this.compressionMethod = compressionMethod;
 		this.extensions = extensions;
+		this.identity = identity;
+		this.identityEncoded = identity.getBytes(Charset.forName("UTF8"));
 	}
 
 	// Serialization //////////////////////////////////////////////////
@@ -157,6 +173,9 @@ public final class ServerHello extends HandshakeMessage {
 
 		writer.write(cipherSuite.getCode(), CIPHER_SUITE_BITS);
 		writer.write(compressionMethod.getCode(), COMPRESSION_METHOD_BITS);
+
+		writer.write(identityEncoded.length, IDENTITY_LENGTH);
+		writer.writeBytes(identityEncoded);
 
 		if (extensions != null) {
 			writer.writeBytes(extensions.toByteArray());
@@ -201,13 +220,17 @@ public final class ServerHello extends HandshakeMessage {
 		}
 		CompressionMethod compressionMethod = CompressionMethod.getMethodByCode(reader.read(COMPRESSION_METHOD_BITS));
 
+		// 先将identityEncoded的比特数长度读出来
+		int identityLength = reader.read(IDENTITY_LENGTH);
+		String identity = new String(reader.readBytes(identityLength));
+
 		byte[] bytesLeft = reader.readBytesLeft();
 		HelloExtensions extensions = null;
 		if (bytesLeft.length > 0) {
 			extensions = HelloExtensions.fromByteArray(bytesLeft, peerAddress);
 		}
 
-		return new ServerHello(version, random, sessionId, cipherSuite, compressionMethod, extensions, peerAddress);
+		return new ServerHello(version, random, sessionId, cipherSuite, compressionMethod, extensions, peerAddress, identity);
 	}
 
 	// Methods ////////////////////////////////////////////////////////
@@ -229,12 +252,12 @@ public final class ServerHello extends HandshakeMessage {
 				0 : (2 + extensions.getLength());
 
 		/*
-		 * fixed sizes: version (2) + random (32) + session ID length (1) +
-		 * cipher suit (2) + compression method (1) = 38, variable sizes: session
-		 * ID
+		 * 固定长度: version (2) + random (32) + session ID length (1) +
+		 * cipher suit (2) + compression method (1) + identity length (1) = 39, variable sizes: session
+		 * ID, identity
 		 */
 
-		return 38 + sessionId.length() + extensionsLength;
+		return 39 + sessionId.length() + extensionsLength + identityEncoded.length;
 	}
 
 	/**

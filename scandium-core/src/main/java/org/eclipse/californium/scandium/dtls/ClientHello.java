@@ -20,6 +20,7 @@
 package org.eclipse.californium.scandium.dtls;
 
 import java.net.InetSocketAddress;
+import java.nio.charset.Charset;
 import java.security.SecureRandom;
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -57,6 +58,10 @@ public final class ClientHello extends HandshakeMessage {
 
 	private static final int COMPRESSION_METHODS_LENGTH_BITS = 8;
 
+	private static final int IDENTITY_LIST_LENGTH = 8;
+
+	private static final int IDENTITY_LENGTH = 8;
+
 	// Members ///////////////////////////////////////////////////////////
 
 	/**
@@ -79,6 +84,37 @@ public final class ClientHello extends HandshakeMessage {
 	 * the client's first preference first.
 	 */
 	private List<CipherSuite> cipherSuites = new ArrayList<>();
+
+    /**
+     * 在ClientHello中创建一个用来存放identity的容器，
+     * 用来将所有与之联系的服务器的identity都放进去。
+     */
+    private List<String> identityList = new ArrayList<>();
+
+	// 获取identityList
+	public List<String> getIdentityList() {
+		return identityList;
+	}
+
+	// 向identityList中添加identity和其UTF-8模式的字节数组
+	public void AddToIdentityList(String Identity) {
+		identityList.add(Identity);
+		identityEncodedList.add(Identity.getBytes(Charset.forName("UTF8")));
+	}
+
+	// 添加一个存放Identity序列化以后的数组
+	private List<byte[]> identityEncodedList = new ArrayList<>();
+
+	// 返回identityEncodedList
+	public List<byte[]> getIdentityEncodedList() {
+		return identityEncodedList;
+	}
+
+	// 向identityEncodedList中添加一个字节化后的identity
+	public void addIdentityEncodedToList(byte[] identityEncoded) {
+		identityEncodedList.add(identityEncoded);
+	}
+
 
 	/**
 	 * This is a list of the compression methods supported by the client, sorted
@@ -177,6 +213,15 @@ public final class ClientHello extends HandshakeMessage {
 		writer.write(compressionMethods.size(), COMPRESSION_METHODS_LENGTH_BITS);
 		writer.writeBytes(CompressionMethod.listToByteArray(compressionMethods));
 
+		// 先将identity列表长度写入，表示一共有多少个identity
+		writer.write(identityEncodedList.size(), IDENTITY_LIST_LENGTH);
+		for (byte[] identity : identityEncodedList) {
+			// 长度
+			writer.write(identity.length, IDENTITY_LENGTH);
+			// identity
+			writer.writeBytes(identity);
+		}
+
 		if (extensions != null) {
 			writer.writeBytes(extensions.toByteArray());
 		}
@@ -222,10 +267,23 @@ public final class ClientHello extends HandshakeMessage {
 		result.compressionMethods = CompressionMethod.listFromByteArray(reader.readBytes(compressionMethodsLength),
 				compressionMethodsLength);
 
+		// 先读一个字节，读出的是identityList的identity数
+		int identityListLength = reader.read(IDENTITY_LIST_LENGTH);
+
+		for (int i = 0; i < identityListLength; i++) {
+			// 将identity的字节长度读出
+			int identityLength = reader.read(IDENTITY_LENGTH);
+			// 将字节化后的identity读出来
+			byte[] identityEncoded = reader.readBytes(identityLength);
+			result.identityEncodedList.add(identityEncoded);
+			result.identityList.add(new String(identityEncoded));
+		}
+
 		byte[] bytesLeft = reader.readBytesLeft();
 		if (bytesLeft.length > 0) {
 			result.extensions = HelloExtensions.fromByteArray(bytesLeft, peerAddress);
 		}
+
 		return result;
 
 	}
@@ -245,11 +303,15 @@ public final class ClientHello extends HandshakeMessage {
 		// http://tools.ietf.org/html/rfc5246#section-7.4.1.2
 		int extensionsLength = (extensions == null || extensions.isEmpty()) ? 0 : (2 + extensions.getLength());
 
-		// fixed sizes: version (2) + random (32) + session ID length (1) +
-		// cookie length (1) + cipher suites length (2) + compression methods
-		// length (1) = 39
-		return 39 + sessionId.length() + cookie.length + cipherSuites.size() * 2 + compressionMethods.size()
+		// 固定的长度(字节数): version (2) + random (32) + session ID length (1) +
+		// cookie length (1) + cipher suites length (2) + compression methods length (1)
+		// + identityList length (1) = 40
+		int fixedLength = 40 + sessionId.length() + cookie.length + cipherSuites.size() * 2 + compressionMethods.size()
 				+ extensionsLength;
+		for (byte[] identity : identityEncodedList) {
+			fixedLength = fixedLength + 1 + identity.length;
+		}
+		return fixedLength;
 	}
 
 	@Override

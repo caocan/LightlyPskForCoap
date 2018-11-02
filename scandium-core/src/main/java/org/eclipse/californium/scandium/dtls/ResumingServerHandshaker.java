@@ -151,8 +151,28 @@ public class ResumingServerHandshaker extends ServerHandshaker {
 			clientRandom = clientHello.getRandom();
 			serverRandom = new Random(new SecureRandom());
 
+			// 将identityList列表中的所有identity拿出来，挨个去自己的pskStore中讯中寻找，如果服务器中有
+			// 对应于自己的identity，那么就将这个identity拿出来，去找到对应的psk，并生成预主密钥和主密钥
+			// 如果找不到的话，就直接终止连接与握手
+			String matchedIdentity = null;
+			for (String identity : clientHello.getIdentityList()) {
+				// 说明在服务器有匹配的identity
+				if (pskStore.getKey(identity) != null) {
+					matchedIdentity = identity;
+				}
+			}
+			// 如果找不到匹配的identity，终止握手
+			if (matchedIdentity == null) {
+				throw new HandshakeException(
+						"Server can't find a psk for handshake with Client. Terminate the handshake!",
+						new AlertMessage(
+								AlertLevel.FATAL,
+								AlertDescription.HANDSHAKE_FAILURE,
+								clientHello.getPeer()));
+			}
+
 			ServerHello serverHello = new ServerHello(clientHello.getClientVersion(), serverRandom, session.getSessionIdentifier(),
-					session.getCipherSuite(), session.getCompressionMethod(), null, clientHello.getPeer());
+					session.getCipherSuite(), session.getCompressionMethod(), null, clientHello.getPeer(), matchedIdentity);
 			flight.addMessage(wrapMessage(serverHello));
 			md.update(serverHello.toByteArray());
 

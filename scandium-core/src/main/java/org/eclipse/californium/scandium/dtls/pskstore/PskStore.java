@@ -16,6 +16,7 @@
 package org.eclipse.californium.scandium.dtls.pskstore;
 
 import java.net.InetSocketAddress;
+import java.util.Set;
 
 import org.eclipse.californium.scandium.util.ServerNames;
 
@@ -66,4 +67,7 @@ public interface PskStore {
 	 * @throws NullPointerException if address is {@code null}.
 	 */
 	String getIdentity(InetSocketAddress inetAddress);
+
+	// 新加的函数，用于将所有的identity提取出来
+	Set<String> getAllIdentity();
 }
