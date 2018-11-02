@@ -125,6 +125,7 @@ import org.eclipse.californium.scandium.util.ByteArrayUtils;
 
 import eu.javaspecialists.tjsn.concurrency.stripedexecutor.StripedExecutorService;
 import eu.javaspecialists.tjsn.concurrency.stripedexecutor.StripedRunnable;
+import org.eclipse.californium.scandium.util.TestUtils;
 
 
 /**
@@ -527,6 +528,8 @@ public class DTLSConnector implements Connector {
 
 	private void receiveNextDatagramFromNetwork() throws IOException {
 
+		// 对接收到的数据报数量进行计数
+		TestUtils.DatagramsPackagesIncrease();
 		byte[] buffer = new byte[inboundDatagramBufferSize];
 		DatagramPacket packet = new DatagramPacket(buffer, buffer.length);
 		DatagramSocket socket = getSocket();

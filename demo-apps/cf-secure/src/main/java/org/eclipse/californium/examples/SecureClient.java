@@ -29,6 +29,7 @@ import org.eclipse.californium.scandium.DTLSConnector;
 import org.eclipse.californium.scandium.ScandiumLogger;
 import org.eclipse.californium.scandium.config.DtlsConnectorConfig;
 import org.eclipse.californium.scandium.dtls.pskstore.StaticPskStore;
+import org.eclipse.californium.scandium.util.TestUtils;
 
 public class SecureClient {
 
@@ -84,8 +85,14 @@ public class SecureClient {
 
 	public static void main(String[] args) throws InterruptedException {
 
-		SecureClient client = new SecureClient();
-		client.test();
+		TestUtils.setStartTime(System.currentTimeMillis());
+		for (int i = 0; i < 20; i++){
+			SecureClient client = new SecureClient();
+			client.test();
+		}
+		TestUtils.setEndTime(System.currentTimeMillis());
+		System.out.println("数据报个数 = " + TestUtils.getDatagramsPackages());
+		System.out.println("耗时 = " + (TestUtils.getEndTime() - TestUtils.getStartTime()));
 
 		synchronized (SecureClient.class) {
 			SecureClient.class.wait();
