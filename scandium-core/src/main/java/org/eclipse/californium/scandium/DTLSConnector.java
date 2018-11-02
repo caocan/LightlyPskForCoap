@@ -601,7 +601,8 @@ public class DTLSConnector implements Connector {
 	}
 
 	private void processRecord(Record record) {
-
+		// 记录数+1
+		TestUtils.RecordNumIncrease();
 		try {
 			LOGGER.log(Level.FINEST, "Received DTLS record of type [{0}]", record.getType());
 

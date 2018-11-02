@@ -29,10 +29,20 @@ public class TestUtils {
             TestUtils.endTime = endTime;
     }
 
+    public static int getRecordNum() {
+        return RecordNum;
+    }
+
+    public static void RecordNumIncrease() {
+        RecordNum++;
+    }
+
     // 数据报数量
     public static int DatagramsPackages = 0;
     // 开始时间
     public static long startTime = 0;
     // 结束时间
     public static long endTime = 0;
+    // 记录数
+    public static int RecordNum = 0;
 }

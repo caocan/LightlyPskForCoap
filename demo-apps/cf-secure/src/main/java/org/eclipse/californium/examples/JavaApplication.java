@@ -18,7 +18,7 @@ class JavaApplication extends JFrame {
         setVisible(true);
     }
 
-    public static void MyDialog(String Algorithm, int times, int DatagramPackages, long during)
+    public static void MyDialog(String Algorithm, int times, int DatagramPackages, int RecordNum, long during)
     {
         JavaApplication application = new JavaApplication();
 
@@ -33,7 +33,7 @@ class JavaApplication extends JFrame {
         Font font = new Font("Serif",1,20);
 
         JTextArea textarea = new JTextArea("执行算法：" + Algorithm + "\n运行次数 = " + times + "\n数据报个数 = " +
-                DatagramPackages + "\n耗时 = " + during + "ms", 30, 30 );
+                DatagramPackages + "\n记录数 = " + RecordNum + "\n耗时 = " + during + "ms", 30, 30 );
 
         textarea.setFont(font);
 

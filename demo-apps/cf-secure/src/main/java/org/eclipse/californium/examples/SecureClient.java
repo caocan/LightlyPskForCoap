@@ -99,7 +99,7 @@ public class SecureClient {
 		}
 		TestUtils.setEndTime(System.currentTimeMillis());
 
-		new JavaApplication().MyDialog(AlgorithmName,2, TestUtils.getDatagramsPackages(), (TestUtils.getEndTime() - TestUtils.getStartTime()));
+		new JavaApplication().MyDialog(AlgorithmName,2, TestUtils.getDatagramsPackages(), TestUtils.getRecordNum(), (TestUtils.getEndTime() - TestUtils.getStartTime()));
 
 		synchronized (SecureClient.class) {
 			SecureClient.class.wait();
