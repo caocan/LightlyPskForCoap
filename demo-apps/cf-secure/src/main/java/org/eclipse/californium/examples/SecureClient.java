@@ -15,6 +15,7 @@
  ******************************************************************************/
 package org.eclipse.californium.examples;
 
+import java.awt.*;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URISyntaxException;
@@ -31,6 +32,8 @@ import org.eclipse.californium.scandium.config.DtlsConnectorConfig;
 import org.eclipse.californium.scandium.dtls.pskstore.StaticPskStore;
 import org.eclipse.californium.scandium.util.TestUtils;
 
+import javax.swing.*;
+
 public class SecureClient {
 
 	static {
@@ -39,6 +42,8 @@ public class SecureClient {
 	}
 
 	private static final String SERVER_URI = "coaps://localhost/secure";
+
+	private static final String AlgorithmName = "轻量级DTLS-PSK";
 
 	private DTLSConnector dtlsConnector;
 
@@ -52,6 +57,8 @@ public class SecureClient {
 
 			//构造好DtlsConnectorConfig实例之后，可以将其用来构造一个DTLSConnector
 			dtlsConnector = new DTLSConnector(builder.build());
+
+
 	}
 
 	public void test() {
@@ -86,13 +93,13 @@ public class SecureClient {
 	public static void main(String[] args) throws InterruptedException {
 
 		TestUtils.setStartTime(System.currentTimeMillis());
-		for (int i = 0; i < 20; i++){
+		for (int i = 0; i < 2; i++){
 			SecureClient client = new SecureClient();
 			client.test();
 		}
 		TestUtils.setEndTime(System.currentTimeMillis());
-		System.out.println("数据报个数 = " + TestUtils.getDatagramsPackages());
-		System.out.println("耗时 = " + (TestUtils.getEndTime() - TestUtils.getStartTime()));
+
+		new JavaApplication().MyDialog(AlgorithmName,2, TestUtils.getDatagramsPackages(), (TestUtils.getEndTime() - TestUtils.getStartTime()));
 
 		synchronized (SecureClient.class) {
 			SecureClient.class.wait();
